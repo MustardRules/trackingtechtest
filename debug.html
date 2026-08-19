@@ -1,20 +1,16 @@
 <!DOCTYPE html>
 <!-- =============================================================================
-     debug.html  —  PRIVACY ENGINEERING DASHBOARD (the most important page)
-     Purpose: show, live, everything you need to answer:
-       - Did OneTrust send the consent update?   (Active Groups + OptanonConsent)
-       - Did Consent Mode change?                 (computed + Google's own store)
-       - What cookies / storage exist right now?
-       - What is in the dataLayer?
-       - The full consent event timeline.
+     debug.html  —  PRIVACY ENGINEERING DASHBOARD  (v2: ground-truth reading)
+     Consent state comes from google_tag_data.ics (via consent-reader.js) and is
+     cross-checked against the real `gcs` parsed from /collect. Also shows the
+     RAW ics.entries so nothing is hidden, plus cookies, storage, dataLayer and
+     a poll-based consent timeline (reliable even after GTM hijacks push).
      ========================================================================== -->
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>OneTrust Lab · Debug</title>
-
-  <!-- Same critical ordering as index.html -->
   <script src="config.js"></script>
   <script src="init.js"></script>
   <link rel="stylesheet" href="styles.css" />
@@ -31,7 +27,7 @@
   <main class="lab-wrap wide">
     <h1>🔬 Consent Debug Dashboard</h1>
     <p class="lead">
-      Auto-refreshes every second. Use the buttons, then watch the values change.
+      Consent = Google's own store (matches the <code>gcs</code> GA sends).
       <label style="margin-left:1rem;">
         <input type="checkbox" id="autorefresh" checked /> auto-refresh
       </label>
@@ -45,55 +41,58 @@
     </div>
 
     <div class="grid2">
-      <!-- ---- Google Consent Mode (computed from our captured log) -------- -->
+      <!-- PRIMARY consent state -->
       <section class="card">
-        <h2>Google Consent Mode <span class="hint">(computed)</span></h2>
+        <h2>Consent Mode state <span class="hint">(google_tag_data.ics)</span></h2>
         <table class="kv" id="gcm-table"></table>
-        <p class="hint">Computed by replaying default → updates we captured.</p>
       </section>
 
-      <!-- ---- Google's own internal store (best-effort, undocumented) ------ -->
+      <!-- Network cross-check -->
       <section class="card">
-        <h2>google_tag_data.ics <span class="hint">(raw)</span></h2>
-        <table class="kv" id="gtd-table"></table>
-        <p class="hint">Read directly from Google's internal store if present.</p>
+        <h2>Network cross-check <span class="hint">(last /collect gcs)</span></h2>
+        <table class="kv">
+          <tr><td>gcs value</td><td id="gcs-val">—</td></tr>
+          <tr><td>gcs → ad_storage</td><td id="gcs-ad">—</td></tr>
+          <tr><td>gcs → analytics_storage</td><td id="gcs-an">—</td></tr>
+          <tr><td>Reader agrees with gcs?</td><td id="gcs-agree">—</td></tr>
+        </table>
       </section>
 
-      <!-- ---- OneTrust ---------------------------------------------------- -->
+      <!-- OneTrust -->
       <section class="card">
         <h2>OneTrust</h2>
         <table class="kv">
           <tr><td>Active groups</td><td id="ot-groups">—</td></tr>
-          <tr><td>OptanonConsent cookie</td><td id="ot-cookie" class="wrap">—</td></tr>
+          <tr><td>OptanonConsent</td><td id="ot-cookie" class="wrap">—</td></tr>
         </table>
       </section>
 
-      <!-- ---- Consent event timeline -------------------------------------- -->
+      <!-- Consent timeline (poll-based change detection) -->
       <section class="card">
-        <h2>Consent event timeline</h2>
+        <h2>Consent change timeline</h2>
         <div id="timeline" class="log"></div>
       </section>
     </div>
 
-    <!-- ---- Cookies --------------------------------------------------------- -->
+    <!-- RAW ics entries so nothing is hidden -->
+    <section class="card">
+      <h2>Raw <code>google_tag_data.ics.entries</code></h2>
+      <pre id="raw-ics" class="log"></pre>
+    </section>
+
+    <!-- Cookies -->
     <section class="card">
       <h2>Cookies <span class="hint" id="cookie-count"></span></h2>
       <table class="kv" id="cookie-table"></table>
     </section>
 
-    <!-- ---- Storage --------------------------------------------------------- -->
+    <!-- Storage -->
     <div class="grid2">
-      <section class="card">
-        <h2>localStorage</h2>
-        <table class="kv" id="ls-table"></table>
-      </section>
-      <section class="card">
-        <h2>sessionStorage</h2>
-        <table class="kv" id="ss-table"></table>
-      </section>
+      <section class="card"><h2>localStorage</h2><table class="kv" id="ls-table"></table></section>
+      <section class="card"><h2>sessionStorage</h2><table class="kv" id="ss-table"></table></section>
     </div>
 
-    <!-- ---- dataLayer ------------------------------------------------------- -->
+    <!-- dataLayer -->
     <section class="card">
       <h2>dataLayer <span class="hint" id="dl-count"></span></h2>
       <pre id="dl-dump" class="log"></pre>
@@ -101,64 +100,81 @@
   </main>
 
   <script src="common.js"></script>
+  <script src="consent-reader.js"></script>
   <script>
-    // ---- helpers to build small tables --------------------------------------
-    function fillKV(tableId, obj, emptyMsg) {
-      var t = document.getElementById(tableId);
-      var keys = Object.keys(obj || {});
-      if (!keys.length) { t.innerHTML = "<tr><td class='hint'>" + (emptyMsg || "empty") + "</td></tr>"; return; }
-      t.innerHTML = keys.map(function (k) {
-        var v = obj[k];
-        var cls = (v === "granted") ? "yes" : (v === "denied") ? "no" : "";
-        return "<tr><td>" + escapeHtml(k) + "</td><td class='" + cls + "'>" + escapeHtml(String(v)) + "</td></tr>";
+    function escapeHtml(s){ return String(s).replace(/[&<>"']/g,function(m){
+      return ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" })[m]; }); }
+    function clsFor(v){ return v==="granted"?"yes":v==="denied"?"no":""; }
+
+    function fillConsent(id, obj){
+      var t=document.getElementById(id);
+      var keys=LabConsent.KEYS.filter(function(k){return k in obj;});
+      if(!keys.length){ t.innerHTML="<tr><td class='hint'>no signals yet (GA not initialised)</td></tr>"; return; }
+      t.innerHTML=keys.map(function(k){
+        return "<tr><td>"+k+"</td><td class='"+clsFor(obj[k])+"'>"+(obj[k]||"—")+"</td></tr>";
       }).join("");
     }
-    function fillList(tableId, arr) {
-      var t = document.getElementById(tableId);
-      if (!arr.length) { t.innerHTML = "<tr><td class='hint'>none</td></tr>"; return; }
-      t.innerHTML = arr.map(function (x) {
-        return "<tr><td>" + escapeHtml(x.name) + "</td><td class='wrap'>" + escapeHtml(x.value) + "</td></tr>";
+    function fillList(id, arr){
+      var t=document.getElementById(id);
+      if(!arr.length){ t.innerHTML="<tr><td class='hint'>none</td></tr>"; return; }
+      t.innerHTML=arr.map(function(x){
+        return "<tr><td>"+escapeHtml(x.name)+"</td><td class='wrap'>"+escapeHtml(x.value)+"</td></tr>";
       }).join("");
-    }
-    function escapeHtml(s) {
-      return String(s).replace(/[&<>"']/g, function (m) {
-        return ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" })[m];
-      });
     }
 
-    // ---- master render ------------------------------------------------------
-    function renderAll() {
-      // Consent Mode (computed)
-      fillKV("gcm-table", labComputeConsentState(), "no signals yet");
-      // Google internal store (raw, may be null)
-      fillKV("gtd-table", labReadGoogleTagData() || {}, "not available");
+    // ---- poll-based consent timeline (reliable; not push-based) ------------
+    var timeline=[];
+    LabConsent.onChange(function(state){
+      timeline.push({ t:new Date().toISOString().split("T")[1].replace("Z",""), state:state });
+      if(timeline.length>40) timeline.shift();
+    }, 400);
+
+    function renderAll(){
+      var consent = LabConsent.read();
+      fillConsent("gcm-table", consent);
+
+      // raw ics
+      var ics = window.google_tag_data && window.google_tag_data.ics;
+      document.getElementById("raw-ics").textContent =
+        ics && ics.entries ? JSON.stringify(ics.entries, null, 2) : "(not available yet)";
+
+      // network cross-check
+      var gcs = LabConsent.latestGcs();
+      var dec = LabConsent.decodeGcs(gcs);
+      document.getElementById("gcs-val").textContent = gcs || "— (no GA hit yet)";
+      var adEl=document.getElementById("gcs-ad"), anEl=document.getElementById("gcs-an");
+      adEl.textContent = dec?dec.ad_storage:"—"; adEl.className = dec?clsFor(dec.ad_storage):"";
+      anEl.textContent = dec?dec.analytics_storage:"—"; anEl.className = dec?clsFor(dec.analytics_storage):"";
+      var ag=document.getElementById("gcs-agree");
+      if(dec && consent.analytics_storage){
+        var ok=dec.analytics_storage===consent.analytics_storage && dec.ad_storage===consent.ad_storage;
+        ag.textContent=ok?"✅ yes":"⚠️ mismatch"; ag.className=ok?"yes":"no";
+      } else { ag.textContent="—"; ag.className=""; }
+
       // OneTrust
-      document.getElementById("ot-groups").textContent = labGetActiveGroups();
-      document.getElementById("ot-cookie").textContent = labGetOptanonConsent();
-      // Cookies
-      var cookies = labGetCookies();
-      document.getElementById("cookie-count").textContent = "(" + cookies.length + ")";
+      document.getElementById("ot-groups").textContent = LabConsent.activeGroups();
+      document.getElementById("ot-cookie").textContent =
+        (labGetCookies().filter(function(c){return c.name==="OptanonConsent";})[0]||{value:"(not set)"}).value;
+
+      // cookies / storage / dataLayer (from common.js)
+      var cookies=labGetCookies();
+      document.getElementById("cookie-count").textContent="("+cookies.length+")";
       fillList("cookie-table", cookies);
-      // Storage
       fillList("ls-table", labGetStorage(window.localStorage));
       fillList("ss-table", labGetStorage(window.sessionStorage));
-      // dataLayer
-      var dl = labGetDataLayer();
-      document.getElementById("dl-count").textContent = "(" + dl.length + " entries)";
-      document.getElementById("dl-dump").textContent = JSON.stringify(dl, null, 2);
-      // Timeline
-      var log = (window.__lab && window.__lab.consentLog) || [];
-      document.getElementById("timeline").innerHTML = log.map(function (e) {
-        var p = (typeof e.payload === "object") ? JSON.stringify(e.payload) : e.payload;
-        return "<div><span class='ts'>" + e.time.split("T")[1].replace("Z","") +
-               "</span> <b>" + e.source + "</b> " + escapeHtml(String(p)) + "</div>";
-      }).join("");
+      var dl=labGetDataLayer();
+      document.getElementById("dl-count").textContent="("+dl.length+" entries)";
+      document.getElementById("dl-dump").textContent=JSON.stringify(dl,null,2);
+
+      // timeline
+      document.getElementById("timeline").innerHTML = timeline.map(function(e){
+        var a=e.state.analytics_storage, d=e.state.ad_storage;
+        return "<div><span class='ts'>"+e.t+"</span> analytics=<b class='"+clsFor(a)+"'>"+
+               a+"</b> ad=<b class='"+clsFor(d)+"'>"+d+"</b></div>";
+      }).join("") || "<span class='hint'>waiting for a consent change…</span>";
     }
 
-    // ---- auto-refresh loop --------------------------------------------------
-    setInterval(function () {
-      if (document.getElementById("autorefresh").checked) renderAll();
-    }, 1000);
+    setInterval(function(){ if(document.getElementById("autorefresh").checked) renderAll(); }, 1000);
     renderAll();
   </script>
 </body>
