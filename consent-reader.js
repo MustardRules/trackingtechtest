@@ -1,18 +1,19 @@
 /* =============================================================================
  * consent-reader.js — GROUND-TRUTH consent reader (single source of truth)
  * -----------------------------------------------------------------------------
- * WHY THIS EXISTS:
- *   The old approach wrapped dataLayer.push to capture gtag('consent','update').
- *   BUG: when GTM loads it REPLACES dataLayer.push with its own function, so
- *   OneTrust's later consent update bypasses our wrapper and we never see it —
- *   the page showed "denied" while GA actually sent "granted" (gcs=G101).
+ * Reads consent from Google's own store: window.google_tag_data.ics — the exact
+ * source the `gcs` parameter on /g/collect is derived from. Also parses the real
+ * `gcs` from the outgoing hit as an independent cross-check.
  *
- * THE FIX:
- *   Read consent from Google's OWN internal store: window.google_tag_data.ics
- *   This is the exact source the `gcs` parameter on /g/collect is derived from,
- *   so what this reader reports === what GA actually enforced. We ALSO parse the
- *   real `gcs` value from the outgoing network request as an independent
- *   cross-check. Two independent sources that must agree = trustworthy lab.
+ * CRITICAL FIELD SEMANTICS (this is where a subtle bug lived):
+ *   ics.entries[key] = {
+ *     default : <boolean>   // the DEFAULT consent value (true=granted,false=denied)
+ *     update  : <boolean>   // the UPDATED consent value after gtag('consent','update')
+ *     implicit: <boolean>   // FLAG: was the value set implicitly? NOT a consent value
+ *     quiet   : <boolean>   // FLAG: internal. NOT a consent value
+ *   }
+ *   => ONLY `update` and `default` are consent VALUES. `implicit`/`quiet` are
+ *      metadata flags and MUST be ignored. Precedence: update > default.
  * ========================================================================== */
 (function (global) {
   "use strict";
@@ -22,45 +23,45 @@
     "functionality_storage", "personalization_storage", "security_storage"
   ];
 
-  // Normalise every shape Google has used for a consent value -> 'granted'/'denied'
+  // Normalise a consent VALUE -> 'granted' / 'denied'. (booleans or strings)
   function norm(v) {
     if (v === "granted" || v === true  || v === 1 || v === "1") return "granted";
-    if (v === "denied"  || v === false || v === 0 || v === 2 || v === "2") return "denied";
+    if (v === "denied"  || v === false || v === 0 || v === "0") return "denied";
     return undefined;
   }
 
-  /* ---- PRIMARY: read Google's internal consent store ---------------------- */
+  /* ---- PRIMARY: read Google's internal consent store --------------------- */
   function readConsent() {
     var out = {};
     var ics = global.google_tag_data && global.google_tag_data.ics;
-    if (!ics) return out; // GA/Consent Mode not initialised yet
+    if (!ics) return out; // Consent Mode not initialised yet
 
-    // 1) Preferred: the per-key entries map. Resolution precedence mirrors
-    //    gtag itself: update > implicit > declare > default.
     if (ics.entries) {
       KEYS.forEach(function (k) {
         var e = ics.entries[k];
         if (!e) return;
-        var v = norm(e.update);
-        if (v === undefined) v = norm(e.implicit);
-        if (v === undefined) v = norm(e.declare);
+        // ONLY these two fields are consent values. Ignore implicit/quiet.
+        var v = norm(e.update);            // updated value wins if present
         if (v === undefined) v = norm(e.default);
         out[k] = v;
       });
     }
-    // 2) Fallback: the resolved numeric getter (1=granted, 2=denied).
+    // Fallback: resolved numeric getter (1=granted, 2=denied), if entries absent.
     if (typeof ics.getConsentState === "function") {
       KEYS.forEach(function (k) {
         if (out[k] === undefined) {
-          try { out[k] = norm(ics.getConsentState(k)); } catch (e) {}
+          try {
+            var s = ics.getConsentState(k);
+            out[k] = (s === 1) ? "granted" : (s === 2) ? "denied" : undefined;
+          } catch (e) {}
         }
       });
     }
     return out;
   }
 
-  /* ---- CROSS-CHECK: parse the real gcs from the last /collect hit ---------- */
-  // gcs format: 'G' + status + ad_storage + analytics_storage  (e.g. G101)
+  /* ---- CROSS-CHECK: parse the real gcs from the last /collect hit --------- */
+  // gcs = 'G' + status + ad_storage + analytics_storage  (e.g. G101)
   function decodeGcs(gcs) {
     if (!gcs || gcs.length < 4 || gcs[0] !== "G") return null;
     return {
@@ -79,11 +80,9 @@
     } catch (e) { return null; }
   }
 
-  /* ---- OneTrust helpers (display/context only) ---------------------------- */
   function activeGroups() { return global.OnetrustActiveGroups || "(none yet)"; }
 
-  /* ---- Change detection for a timeline ----------------------------------- */
-  // Poll-based (reliable, unlike push-wrapping). Fires cb(state) on any change.
+  // Poll-based change detection (reliable; GTM replaces dataLayer.push).
   function onConsentChange(cb, intervalMs) {
     var last = JSON.stringify(readConsent());
     return setInterval(function () {
@@ -94,10 +93,10 @@
 
   global.LabConsent = {
     KEYS: KEYS,
-    read: readConsent,          // -> {ad_storage:'denied', analytics_storage:'granted', ...}
-    latestGcs: latestGcs,       // -> 'G101' | null
-    decodeGcs: decodeGcs,       // -> {ad_storage, analytics_storage} | null
-    activeGroups: activeGroups, // -> 'C0001,C0002,...'
+    read: readConsent,
+    latestGcs: latestGcs,
+    decodeGcs: decodeGcs,
+    activeGroups: activeGroups,
     onChange: onConsentChange
   };
 })(window);
