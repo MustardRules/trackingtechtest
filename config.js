@@ -16,7 +16,7 @@
 window.LAB_CONFIG = {
 
   // --- REQUIRED -------------------------------------------------------------
-  OT_DOMAIN_SCRIPT: "3961b4b2-a01d-40d9-9616-58bb7edf6d16-test", // <-- CHANGE ME
+  OT_DOMAIN_SCRIPT: "3961b4b2-a01d-40d9-9616-58bb7edf6d16", // <-- CHANGE ME
   GTM_ID:           "GTM-WQ99GFDZ",                                // <-- CHANGE ME
 
   // --- OPTIONAL -------------------------------------------------------------
