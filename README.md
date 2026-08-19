@@ -18,6 +18,16 @@ A minimal static site to validate end-to-end: **OneTrust banner → Google Conse
 | `events.html` | Event generator — pushes named `dataLayer` events. |
 | `tag-lab.html` | Non-Google tags (Meta / LinkedIn / Clarity), gated on OneTrust groups. |
 | `reset.html` | Clean-room controls — clear cookies/storage, reopen banner. |
+| `GTM-lab-container.json` | Importable GTM container: consent-aware GA4 config + 8 event tags/triggers, all gated on `analytics_storage`. |
+
+## Import the GTM container
+1. GTM → **Admin → Import Container**.
+2. Choose `GTM-lab-container.json`.
+3. Workspace: **New** (e.g. "OneTrust Lab"). Option: **Merge** (not Overwrite) if the container already has tags.
+4. After import, open the **GA4 Measurement ID** variable and replace `G-XXXXXXXXXX` with your test property ID — that one edit feeds all 9 tags.
+5. **Preview** (Tag Assistant), run through the lab, then **Submit/Publish**.
+
+**What's inside:** 1 GA4 Configuration tag (All Pages) + 8 GA4 Event tags (`cta_click`, `signup_start`, `add_to_cart`, `purchase`, `form_submit`, `outbound_click`, `file_download`, `video_play`) wired to matching Custom Event triggers. Every tag has an **additional consent check on `analytics_storage`**, so nothing fires until analytics consent is granted.
 
 ## Setup (≈15 min)
 1. **Edit `config.js`** — set `OT_DOMAIN_SCRIPT` (your *test* script) and `GTM_ID`. Add optional pixel IDs if needed.
