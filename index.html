@@ -1,10 +1,8 @@
 <!DOCTYPE html>
 <!-- =============================================================================
-     index.html  —  MAIN TEST PAGE
-     Purpose: behave like a normal website page so you can validate the full
-     chain: OneTrust banner -> Consent Mode v2 -> GTM -> GA4.
-     Test here: first visit, Accept All, Reject All, custom preferences,
-     cookie creation, and Consent Mode signal changes.
+     index.html  —  MAIN TEST PAGE  (v2: ground-truth consent reading)
+     Reads consent from Google's own store via consent-reader.js, and shows the
+     live `gcs` value parsed from the real /collect request as a cross-check.
      ========================================================================== -->
 <html lang="en">
 <head>
@@ -12,20 +10,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>OneTrust Lab · Home</title>
 
-  <!-- ORDER MATTERS: config first, then init (both synchronous). init.js sets
-       Consent Mode defaults BEFORE it injects OneTrust and GTM. Do NOT add
-       async/defer here or the ordering guarantee is lost. -->
+  <!-- ORDER MATTERS: config -> init (sets Consent Mode defaults, injects OT+GTM).
+       Do NOT add async/defer here. -->
   <script src="config.js"></script>
   <script src="init.js"></script>
-
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <!-- GTM noscript fallback (harmless if JS is on). Replace GTM-XXXXXXX only if
-       you hard-code it; otherwise it is informational for the lab. -->
   <noscript>
     <iframe src="https://www.googletagmanager.com/ns.html?id=GTM-WQ99GFDZ"
-            height="0" width="0" style="display:none;visibility:hidden"></iframe>
+            height="100" width="100" style="display:none;visibility:hidden"></iframe>
   </noscript>
 
   <nav class="lab-nav">
@@ -39,14 +33,13 @@
   <main class="lab-wrap">
     <h1>🧪 OneTrust / Consent Mode Lab</h1>
     <p class="lead">
-      This is the main page. It loads the OneTrust banner, Google Tag Manager
-      and (via GTM) GA4. Use the banner, then open the
-      <a href="debug.html">Debug</a> page to see exactly what changed.
+      Loads OneTrust + GTM + GA4. Consent values below are read from Google's own
+      store (<code>google_tag_data.ics</code>) — the same source the outgoing
+      <code>gcs</code> parameter uses — so they match what GA actually enforces.
     </p>
 
     <section class="card">
       <h2>Quick consent actions</h2>
-      <p>These call OneTrust's public API directly (no need to click the banner).</p>
       <div class="btn-row">
         <button class="btn ok"   onclick="OneTrust && OneTrust.AllowAll()">Accept All</button>
         <button class="btn bad"  onclick="OneTrust && OneTrust.RejectAll()">Reject All</button>
@@ -55,44 +48,69 @@
     </section>
 
     <section class="card">
-      <h2>Live snapshot</h2>
-      <p>A minimal live view (full detail is on the Debug page):</p>
+      <h2>Live consent state <span class="hint">(ground truth)</span></h2>
       <table class="kv">
-        <tr><td>OneTrust active groups</td><td id="snap-groups">—</td></tr>
-        <tr><td>analytics_storage</td><td id="snap-analytics">—</td></tr>
-        <tr><td>ad_storage</td><td id="snap-ad">—</td></tr>
-        <tr><td>ad_user_data</td><td id="snap-adud">—</td></tr>
-        <tr><td>ad_personalization</td><td id="snap-adp">—</td></tr>
+        <tr><td>OneTrust active groups</td><td id="s-groups">—</td></tr>
+        <tr><td>analytics_storage</td><td id="s-analytics">—</td></tr>
+        <tr><td>ad_storage</td><td id="s-ad">—</td></tr>
+        <tr><td>ad_user_data</td><td id="s-adud">—</td></tr>
+        <tr><td>ad_personalization</td><td id="s-adp">—</td></tr>
+        <tr><td>security_storage</td><td id="s-sec">—</td></tr>
       </table>
     </section>
 
-    <section class="card muted">
-      <h2>Checklist for this page</h2>
-      <ul>
-        <li>Banner appears on first visit (no consent cookie yet).</li>
-        <li>Before any choice, all Consent Mode signals are <code>denied</code>.</li>
-        <li>Accept All → analytics_storage &amp; ad_* flip to <code>granted</code>.</li>
-        <li>Reject All → signals stay/return to <code>denied</code>; GA sends a
-            cookieless ping instead of setting cookies.</li>
-        <li>An <code>OptanonConsent</code> cookie is written after a choice.</li>
-      </ul>
+    <section class="card">
+      <h2>Network cross-check <span class="hint">(from last /collect)</span></h2>
+      <table class="kv">
+        <tr><td>Last gcs value</td><td id="s-gcs">— (no GA hit yet)</td></tr>
+        <tr><td>gcs → ad_storage</td><td id="s-gcs-ad">—</td></tr>
+        <tr><td>gcs → analytics_storage</td><td id="s-gcs-an">—</td></tr>
+        <tr><td>Reader vs gcs agree?</td><td id="s-agree">—</td></tr>
+      </table>
+      <p class="hint">
+        If "agree" is ✅, the page reads consent correctly. G1<i>x</i><i>y</i>:
+        x=ad_storage, y=analytics_storage (1=granted, 0=denied).
+      </p>
     </section>
   </main>
 
-  <!-- common.js gives us labGetActiveGroups() and labComputeConsentState() -->
-  <script src="common.js"></script>
+  <script src="consent-reader.js"></script>
   <script>
-    // Tiny live snapshot, refreshed every second. Full detail lives on debug.html
-    function refreshSnap() {
-      var c = labComputeConsentState();
-      document.getElementById("snap-groups").textContent   = labGetActiveGroups();
-      document.getElementById("snap-analytics").textContent = c.analytics_storage || "—";
-      document.getElementById("snap-ad").textContent        = c.ad_storage || "—";
-      document.getElementById("snap-adud").textContent      = c.ad_user_data || "—";
-      document.getElementById("snap-adp").textContent       = c.ad_personalization || "—";
+    function cls(v){ return v==="granted"?"yes":v==="denied"?"no":""; }
+    function set(id, v){
+      var el=document.getElementById(id);
+      el.textContent = v || "—";
+      el.className = cls(v);
     }
-    setInterval(refreshSnap, 1000);
-    refreshSnap();
+    function refresh(){
+      // PRIMARY: Google's own consent store
+      var c = LabConsent.read();
+      document.getElementById("s-groups").textContent = LabConsent.activeGroups();
+      set("s-analytics", c.analytics_storage);
+      set("s-ad",        c.ad_storage);
+      set("s-adud",      c.ad_user_data);
+      set("s-adp",       c.ad_personalization);
+      set("s-sec",       c.security_storage);
+
+      // CROSS-CHECK: real gcs from network
+      var gcs = LabConsent.latestGcs();
+      var dec = LabConsent.decodeGcs(gcs);
+      document.getElementById("s-gcs").textContent = gcs || "— (no GA hit yet)";
+      set("s-gcs-ad", dec && dec.ad_storage);
+      set("s-gcs-an", dec && dec.analytics_storage);
+
+      var agree = document.getElementById("s-agree");
+      if (dec && c.analytics_storage){
+        var ok = (dec.analytics_storage===c.analytics_storage) &&
+                 (dec.ad_storage===c.ad_storage);
+        agree.textContent = ok ? "✅ yes" : "⚠️ mismatch";
+        agree.className = ok ? "yes" : "no";
+      } else {
+        agree.textContent = "—"; agree.className = "";
+      }
+    }
+    setInterval(refresh, 1000);
+    refresh();
   </script>
 </body>
 </html>
