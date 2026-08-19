@@ -42,7 +42,7 @@
     ad_storage:             "denied",
     ad_user_data:           "denied",
     ad_personalization:     "denied",
-    analytics_storage:      "denied",
+    analytics_storage:      "granted",
     functionality_storage:  "denied",
     personalization_storage:"denied",
     security_storage:       "granted"   // security is always allowed
