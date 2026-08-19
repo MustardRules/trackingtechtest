@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<!-- =============================================================================
+     events.html  —  INTERACTION GENERATOR
+     Purpose: push realistic user interactions into the dataLayer so you can:
+       - build GTM triggers for each event
+       - verify events are SUPPRESSED when analytics consent is denied
+       - verify events are COLLECTED once consent is granted
+     Every button below pushes a named event to the dataLayer.
+     ========================================================================== -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OneTrust Lab · Events</title>
+  <script src="config.js"></script>
+  <script src="init.js"></script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <nav class="lab-nav">
+    <a href="index.html">Home</a>
+    <a href="debug.html">Debug</a>
+    <a href="events.html" class="active">Events</a>
+    <a href="tag-lab.html">Tag Lab</a>
+    <a href="reset.html">Reset</a>
+  </nav>
+
+  <main class="lab-wrap">
+    <h1>🎯 Event Generator</h1>
+    <p class="lead">
+      Each control pushes an event into <code>dataLayer</code>. Open GA4
+      DebugView (or the Debug page) to see whether it is collected under the
+      current consent state.
+    </p>
+
+    <section class="card">
+      <h2>Custom events</h2>
+      <div class="btn-row">
+        <button class="btn" onclick="pushEvent('cta_click',   {label:'hero_button'})">CTA click</button>
+        <button class="btn" onclick="pushEvent('signup_start',{method:'email'})">Signup start</button>
+        <button class="btn" onclick="pushEvent('add_to_cart', {item:'demo_sku', value:42})">Add to cart</button>
+        <button class="btn" onclick="pushEvent('purchase',    {value:199.99, currency:'CHF'})">Purchase</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Form submission</h2>
+      <!-- On submit we prevent navigation and push a form_submit event -->
+      <form onsubmit="return handleForm(event)">
+        <input type="text"  id="f-name"  placeholder="Name" required />
+        <input type="email" id="f-email" placeholder="you@example.com" required />
+        <button class="btn ok" type="submit">Submit form</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Outbound &amp; download links</h2>
+      <p>These push events then let the default action happen.</p>
+      <div class="btn-row">
+        <!-- external link: push then open in a new tab -->
+        <a class="btn" href="https://example.com" target="_blank" rel="noopener"
+           onclick="pushEvent('outbound_click',{url:'https://example.com'})">External link ↗</a>
+        <!-- download link: data URI so it works offline; pushes file_download -->
+        <a class="btn" download="lab-sample.txt"
+           href="data:text/plain;charset=utf-8,OneTrust%20lab%20sample%20file"
+           onclick="pushEvent('file_download',{file:'lab-sample.txt'})">Download file ⬇</a>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Video</h2>
+      <!-- HTML5 video with no real source; we only care about the play event.
+           Clicking the button fires a video_play event. -->
+      <video id="vid" width="320" controls
+             poster="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='180'><rect width='100%25' height='100%25' fill='%23222'/><text x='50%25' y='50%25' fill='%23bbb' font-family='sans-serif' font-size='16' text-anchor='middle'>Sample video</text></svg>">
+      </video>
+      <div class="btn-row">
+        <button class="btn" onclick="pushEvent('video_play',{video:'sample'})">Simulate video play</button>
+      </div>
+    </section>
+
+    <section class="card muted">
+      <h2>Last pushed event</h2>
+      <pre id="last-event" class="log">—</pre>
+    </section>
+  </main>
+
+  <script>
+    // Generic dataLayer event pusher with a small on-screen echo.
+    function pushEvent(name, params) {
+      var payload = Object.assign({ event: name }, params || {});
+      window.dataLayer.push(payload);
+      document.getElementById("last-event").textContent = JSON.stringify(payload, null, 2);
+    }
+    // Form handler: prevent navigation, push event with (non-PII-safe) fields.
+    function handleForm(e) {
+      e.preventDefault();
+      pushEvent("form_submit", {
+        form_id: "lab_contact",
+        has_name:  !!document.getElementById("f-name").value,
+        has_email: !!document.getElementById("f-email").value
+      });
+      return false;
+    }
+  </script>
+</body>
+</html>

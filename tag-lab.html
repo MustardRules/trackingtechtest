@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<!-- =============================================================================
+     tag-lab.html  —  NON-GOOGLE MARKETING TAGS
+     Purpose: verify that vendors OUTSIDE Google (Meta, LinkedIn, Clarity) stay
+     BLOCKED until the relevant OneTrust category is active, and only fire once
+     consent is granted. Many OneTrust problems live here, not in Google.
+     -----------------------------------------------------------------------------
+     IMPORTANT: We intentionally do NOT auto-load these pixels. Each fires only
+     when you click its button AND the matching OneTrust group is active. That
+     keeps the lab observable and avoids leaking data during "denied" tests.
+     Adjust the group IDs below to match YOUR OneTrust configuration.
+     ========================================================================== -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OneTrust Lab · Tag Lab</title>
+  <script src="config.js"></script>
+  <script src="init.js"></script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <nav class="lab-nav">
+    <a href="index.html">Home</a>
+    <a href="debug.html">Debug</a>
+    <a href="events.html">Events</a>
+    <a href="tag-lab.html" class="active">Tag Lab</a>
+    <a href="reset.html">Reset</a>
+  </nav>
+
+  <main class="lab-wrap">
+    <h1>🏷️ Non-Google Tag Lab</h1>
+    <p class="lead">
+      Each vendor below is gated on a OneTrust group. Default mapping used here:
+      <code>C0002 = Performance</code>, <code>C0004 = Targeting</code>. Change the
+      <code>data-group</code> values to match your OneTrust categories.
+    </p>
+
+    <section class="card">
+      <h2>Consent status</h2>
+      <table class="kv">
+        <tr><td>Active OneTrust groups</td><td id="groups">—</td></tr>
+      </table>
+      <div class="btn-row">
+        <button class="btn ok"  onclick="OneTrust && OneTrust.AllowAll()">Accept All</button>
+        <button class="btn bad" onclick="OneTrust && OneTrust.RejectAll()">Reject All</button>
+        <button class="btn"     onclick="OneTrust && OneTrust.ToggleInfoDisplay()">Preference Center</button>
+      </div>
+    </section>
+
+    <!-- Each tile shows whether its group is active and lets you fire the tag. -->
+    <section class="card" data-group="C0004">
+      <h2>Meta Pixel <span class="pill" data-status>—</span></h2>
+      <p>Requires Targeting (C0004). Fires <code>PageView</code>.</p>
+      <button class="btn" onclick="fireMeta()">Fire Meta Pixel</button>
+    </section>
+
+    <section class="card" data-group="C0004">
+      <h2>LinkedIn Insight <span class="pill" data-status>—</span></h2>
+      <p>Requires Targeting (C0004). Loads the insight tag.</p>
+      <button class="btn" onclick="fireLinkedIn()">Fire LinkedIn tag</button>
+    </section>
+
+    <section class="card" data-group="C0002">
+      <h2>Microsoft Clarity <span class="pill" data-status>—</span></h2>
+      <p>Requires Performance (C0002). Starts a Clarity session.</p>
+      <button class="btn" onclick="fireClarity()">Fire Clarity</button>
+    </section>
+
+    <section class="card muted">
+      <h2>Fire log</h2>
+      <pre id="fire-log" class="log">—</pre>
+    </section>
+  </main>
+
+  <script src="common.js"></script>
+  <script>
+    var cfg = window.LAB_CONFIG || {};
+
+    // Is a given OneTrust group currently active?
+    function groupActive(groupId) {
+      return (window.OnetrustActiveGroups || "").indexOf(groupId) !== -1;
+    }
+    function log(msg) {
+      document.getElementById("fire-log").textContent =
+        "[" + new Date().toLocaleTimeString() + "] " + msg;
+    }
+    // Guard: refuse to fire if the required group is not active.
+    function guard(groupId, vendor, fn) {
+      if (!groupActive(groupId)) {
+        log("BLOCKED: " + vendor + " — OneTrust group " + groupId + " not active.");
+        return;
+      }
+      fn();
+    }
+
+    // ---- Meta Pixel (loads fbevents.js then fires PageView) -----------------
+    function fireMeta() {
+      guard("C0004", "Meta Pixel", function () {
+        if (!cfg.META_PIXEL_ID) { log("Meta: set META_PIXEL_ID in config.js first."); return; }
+        !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+          n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+          n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+          t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}
+          (window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+        fbq('init', cfg.META_PIXEL_ID);
+        fbq('track', 'PageView');
+        log("Meta Pixel fired (init " + cfg.META_PIXEL_ID + ", PageView).");
+      });
+    }
+
+    // ---- LinkedIn Insight Tag ----------------------------------------------
+    function fireLinkedIn() {
+      guard("C0004", "LinkedIn", function () {
+        if (!cfg.LINKEDIN_PARTNER_ID) { log("LinkedIn: set LINKEDIN_PARTNER_ID in config.js first."); return; }
+        window._linkedin_partner_id = cfg.LINKEDIN_PARTNER_ID;
+        window._linkedin_data_partner_ids = window._linkedin_data_partner_ids || [];
+        window._linkedin_data_partner_ids.push(cfg.LINKEDIN_PARTNER_ID);
+        var s = document.createElement("script"); s.async = true;
+        s.src = "https://snap.licdn.com/li.lms-analytics/insight.min.js";
+        document.head.appendChild(s);
+        log("LinkedIn Insight tag loaded (partner " + cfg.LINKEDIN_PARTNER_ID + ").");
+      });
+    }
+
+    // ---- Microsoft Clarity --------------------------------------------------
+    function fireClarity() {
+      guard("C0002", "Clarity", function () {
+        if (!cfg.CLARITY_ID) { log("Clarity: set CLARITY_ID in config.js first."); return; }
+        (function(c,l,a,r,i,t,y){c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+          t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+          y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y)})
+          (window,document,"clarity","script",cfg.CLARITY_ID);
+        log("Clarity started (project " + cfg.CLARITY_ID + ").");
+      });
+    }
+
+    // ---- Live status pills --------------------------------------------------
+    function refreshStatus() {
+      document.getElementById("groups").textContent = labGetActiveGroups();
+      document.querySelectorAll(".card[data-group]").forEach(function (card) {
+        var g = card.getAttribute("data-group");
+        var pill = card.querySelector("[data-status]");
+        if (!pill) return;
+        var active = groupActive(g);
+        pill.textContent = active ? (g + " active") : (g + " blocked");
+        pill.className = "pill " + (active ? "yes" : "no");
+      });
+    }
+    setInterval(refreshStatus, 1000);
+    refreshStatus();
+  </script>
+</body>
+</html>

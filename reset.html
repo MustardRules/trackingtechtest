@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<!-- =============================================================================
+     reset.html  —  CLEAN-ROOM CONTROLS
+     Purpose: return the browser to a "first visit" state without digging through
+     DevTools. Test fresh-visitor scenarios, regression cases and banner re-display.
+     ========================================================================== -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OneTrust Lab · Reset</title>
+  <script src="config.js"></script>
+  <script src="init.js"></script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <nav class="lab-nav">
+    <a href="index.html">Home</a>
+    <a href="debug.html">Debug</a>
+    <a href="events.html">Events</a>
+    <a href="tag-lab.html">Tag Lab</a>
+    <a href="reset.html" class="active">Reset</a>
+  </nav>
+
+  <main class="lab-wrap">
+    <h1>🧹 Reset / Clean-room</h1>
+    <p class="lead">
+      Clear state to simulate a brand-new visitor. Tip: cookies set by
+      <code>.cookielaw.org</code> or with the <code>HttpOnly</code> flag can only
+      be removed from DevTools — this page clears everything readable by JS.
+    </p>
+
+    <section class="card">
+      <h2>OneTrust</h2>
+      <div class="btn-row">
+        <button class="btn"     onclick="labReopenBanner()">Reopen banner / Preference Center</button>
+        <button class="btn ok"  onclick="labAcceptAll()">Accept All</button>
+        <button class="btn bad" onclick="labRejectAll()">Reject All</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Clear state</h2>
+      <div class="btn-row">
+        <button class="btn bad" onclick="doClearCookies()">Delete cookies</button>
+        <button class="btn bad" onclick="doClearStorage()">Clear local &amp; session storage</button>
+        <button class="btn bad" onclick="doClearAll()">Clear everything</button>
+        <button class="btn"     onclick="location.reload()">Reload page</button>
+      </div>
+      <p class="hint">
+        For a guaranteed fresh visit, click "Clear everything" then reload —
+        or use an incognito/private window.
+      </p>
+    </section>
+
+    <section class="card muted">
+      <h2>Result</h2>
+      <pre id="result" class="log">Ready.</pre>
+    </section>
+  </main>
+
+  <!-- common.js provides labClearCookies / labClearStorage / labReopen* etc. -->
+  <script src="common.js"></script>
+  <script>
+    function say(msg) { document.getElementById("result").textContent = msg; }
+
+    function doClearCookies() {
+      var before = labGetCookies().length;
+      labClearCookies();
+      say("Cleared cookies (" + before + " were present). Reload to confirm the banner returns.");
+    }
+    function doClearStorage() {
+      labClearStorage();
+      say("Cleared localStorage and sessionStorage.");
+    }
+    function doClearAll() {
+      var before = labGetCookies().length;
+      labClearCookies();
+      labClearStorage();
+      say("Cleared " + before + " cookies + all storage. Now click Reload for a fresh visit.");
+    }
+  </script>
+</body>
+</html>

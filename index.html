@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<!-- =============================================================================
+     index.html  —  MAIN TEST PAGE
+     Purpose: behave like a normal website page so you can validate the full
+     chain: OneTrust banner -> Consent Mode v2 -> GTM -> GA4.
+     Test here: first visit, Accept All, Reject All, custom preferences,
+     cookie creation, and Consent Mode signal changes.
+     ========================================================================== -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OneTrust Lab · Home</title>
+
+  <!-- ORDER MATTERS: config first, then init (both synchronous). init.js sets
+       Consent Mode defaults BEFORE it injects OneTrust and GTM. Do NOT add
+       async/defer here or the ordering guarantee is lost. -->
+  <script src="config.js"></script>
+  <script src="init.js"></script>
+
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- GTM noscript fallback (harmless if JS is on). Replace GTM-XXXXXXX only if
+       you hard-code it; otherwise it is informational for the lab. -->
+  <noscript>
+    <iframe src="https://www.googletagmanager.com/ns.html?id=GTM-XXXXXXX"
+            height="0" width="0" style="display:none;visibility:hidden"></iframe>
+  </noscript>
+
+  <nav class="lab-nav">
+    <a href="index.html" class="active">Home</a>
+    <a href="debug.html">Debug</a>
+    <a href="events.html">Events</a>
+    <a href="tag-lab.html">Tag Lab</a>
+    <a href="reset.html">Reset</a>
+  </nav>
+
+  <main class="lab-wrap">
+    <h1>🧪 OneTrust / Consent Mode Lab</h1>
+    <p class="lead">
+      This is the main page. It loads the OneTrust banner, Google Tag Manager
+      and (via GTM) GA4. Use the banner, then open the
+      <a href="debug.html">Debug</a> page to see exactly what changed.
+    </p>
+
+    <section class="card">
+      <h2>Quick consent actions</h2>
+      <p>These call OneTrust's public API directly (no need to click the banner).</p>
+      <div class="btn-row">
+        <button class="btn ok"   onclick="OneTrust && OneTrust.AllowAll()">Accept All</button>
+        <button class="btn bad"  onclick="OneTrust && OneTrust.RejectAll()">Reject All</button>
+        <button class="btn"      onclick="OneTrust && OneTrust.ToggleInfoDisplay()">Open Preference Center</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Live snapshot</h2>
+      <p>A minimal live view (full detail is on the Debug page):</p>
+      <table class="kv">
+        <tr><td>OneTrust active groups</td><td id="snap-groups">—</td></tr>
+        <tr><td>analytics_storage</td><td id="snap-analytics">—</td></tr>
+        <tr><td>ad_storage</td><td id="snap-ad">—</td></tr>
+        <tr><td>ad_user_data</td><td id="snap-adud">—</td></tr>
+        <tr><td>ad_personalization</td><td id="snap-adp">—</td></tr>
+      </table>
+    </section>
+
+    <section class="card muted">
+      <h2>Checklist for this page</h2>
+      <ul>
+        <li>Banner appears on first visit (no consent cookie yet).</li>
+        <li>Before any choice, all Consent Mode signals are <code>denied</code>.</li>
+        <li>Accept All → analytics_storage &amp; ad_* flip to <code>granted</code>.</li>
+        <li>Reject All → signals stay/return to <code>denied</code>; GA sends a
+            cookieless ping instead of setting cookies.</li>
+        <li>An <code>OptanonConsent</code> cookie is written after a choice.</li>
+      </ul>
+    </section>
+  </main>
+
+  <!-- common.js gives us labGetActiveGroups() and labComputeConsentState() -->
+  <script src="common.js"></script>
+  <script>
+    // Tiny live snapshot, refreshed every second. Full detail lives on debug.html
+    function refreshSnap() {
+      var c = labComputeConsentState();
+      document.getElementById("snap-groups").textContent   = labGetActiveGroups();
+      document.getElementById("snap-analytics").textContent = c.analytics_storage || "—";
+      document.getElementById("snap-ad").textContent        = c.ad_storage || "—";
+      document.getElementById("snap-adud").textContent      = c.ad_user_data || "—";
+      document.getElementById("snap-adp").textContent       = c.ad_personalization || "—";
+    }
+    setInterval(refreshSnap, 1000);
+    refreshSnap();
+  </script>
+</body>
+</html>

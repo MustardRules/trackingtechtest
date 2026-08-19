@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<!-- =============================================================================
+     debug.html  —  PRIVACY ENGINEERING DASHBOARD (the most important page)
+     Purpose: show, live, everything you need to answer:
+       - Did OneTrust send the consent update?   (Active Groups + OptanonConsent)
+       - Did Consent Mode change?                 (computed + Google's own store)
+       - What cookies / storage exist right now?
+       - What is in the dataLayer?
+       - The full consent event timeline.
+     ========================================================================== -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OneTrust Lab · Debug</title>
+
+  <!-- Same critical ordering as index.html -->
+  <script src="config.js"></script>
+  <script src="init.js"></script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <nav class="lab-nav">
+    <a href="index.html">Home</a>
+    <a href="debug.html" class="active">Debug</a>
+    <a href="events.html">Events</a>
+    <a href="tag-lab.html">Tag Lab</a>
+    <a href="reset.html">Reset</a>
+  </nav>
+
+  <main class="lab-wrap wide">
+    <h1>🔬 Consent Debug Dashboard</h1>
+    <p class="lead">
+      Auto-refreshes every second. Use the buttons, then watch the values change.
+      <label style="margin-left:1rem;">
+        <input type="checkbox" id="autorefresh" checked /> auto-refresh
+      </label>
+    </p>
+
+    <div class="btn-row">
+      <button class="btn ok"  onclick="OneTrust && OneTrust.AllowAll()">Accept All</button>
+      <button class="btn bad" onclick="OneTrust && OneTrust.RejectAll()">Reject All</button>
+      <button class="btn"     onclick="OneTrust && OneTrust.ToggleInfoDisplay()">Preference Center</button>
+      <button class="btn"     onclick="renderAll()">Refresh now</button>
+    </div>
+
+    <div class="grid2">
+      <!-- ---- Google Consent Mode (computed from our captured log) -------- -->
+      <section class="card">
+        <h2>Google Consent Mode <span class="hint">(computed)</span></h2>
+        <table class="kv" id="gcm-table"></table>
+        <p class="hint">Computed by replaying default → updates we captured.</p>
+      </section>
+
+      <!-- ---- Google's own internal store (best-effort, undocumented) ------ -->
+      <section class="card">
+        <h2>google_tag_data.ics <span class="hint">(raw)</span></h2>
+        <table class="kv" id="gtd-table"></table>
+        <p class="hint">Read directly from Google's internal store if present.</p>
+      </section>
+
+      <!-- ---- OneTrust ---------------------------------------------------- -->
+      <section class="card">
+        <h2>OneTrust</h2>
+        <table class="kv">
+          <tr><td>Active groups</td><td id="ot-groups">—</td></tr>
+          <tr><td>OptanonConsent cookie</td><td id="ot-cookie" class="wrap">—</td></tr>
+        </table>
+      </section>
+
+      <!-- ---- Consent event timeline -------------------------------------- -->
+      <section class="card">
+        <h2>Consent event timeline</h2>
+        <div id="timeline" class="log"></div>
+      </section>
+    </div>
+
+    <!-- ---- Cookies --------------------------------------------------------- -->
+    <section class="card">
+      <h2>Cookies <span class="hint" id="cookie-count"></span></h2>
+      <table class="kv" id="cookie-table"></table>
+    </section>
+
+    <!-- ---- Storage --------------------------------------------------------- -->
+    <div class="grid2">
+      <section class="card">
+        <h2>localStorage</h2>
+        <table class="kv" id="ls-table"></table>
+      </section>
+      <section class="card">
+        <h2>sessionStorage</h2>
+        <table class="kv" id="ss-table"></table>
+      </section>
+    </div>
+
+    <!-- ---- dataLayer ------------------------------------------------------- -->
+    <section class="card">
+      <h2>dataLayer <span class="hint" id="dl-count"></span></h2>
+      <pre id="dl-dump" class="log"></pre>
+    </section>
+  </main>
+
+  <script src="common.js"></script>
+  <script>
+    // ---- helpers to build small tables --------------------------------------
+    function fillKV(tableId, obj, emptyMsg) {
+      var t = document.getElementById(tableId);
+      var keys = Object.keys(obj || {});
+      if (!keys.length) { t.innerHTML = "<tr><td class='hint'>" + (emptyMsg || "empty") + "</td></tr>"; return; }
+      t.innerHTML = keys.map(function (k) {
+        var v = obj[k];
+        var cls = (v === "granted") ? "yes" : (v === "denied") ? "no" : "";
+        return "<tr><td>" + escapeHtml(k) + "</td><td class='" + cls + "'>" + escapeHtml(String(v)) + "</td></tr>";
+      }).join("");
+    }
+    function fillList(tableId, arr) {
+      var t = document.getElementById(tableId);
+      if (!arr.length) { t.innerHTML = "<tr><td class='hint'>none</td></tr>"; return; }
+      t.innerHTML = arr.map(function (x) {
+        return "<tr><td>" + escapeHtml(x.name) + "</td><td class='wrap'>" + escapeHtml(x.value) + "</td></tr>";
+      }).join("");
+    }
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, function (m) {
+        return ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" })[m];
+      });
+    }
+
+    // ---- master render ------------------------------------------------------
+    function renderAll() {
+      // Consent Mode (computed)
+      fillKV("gcm-table", labComputeConsentState(), "no signals yet");
+      // Google internal store (raw, may be null)
+      fillKV("gtd-table", labReadGoogleTagData() || {}, "not available");
+      // OneTrust
+      document.getElementById("ot-groups").textContent = labGetActiveGroups();
+      document.getElementById("ot-cookie").textContent = labGetOptanonConsent();
+      // Cookies
+      var cookies = labGetCookies();
+      document.getElementById("cookie-count").textContent = "(" + cookies.length + ")";
+      fillList("cookie-table", cookies);
+      // Storage
+      fillList("ls-table", labGetStorage(window.localStorage));
+      fillList("ss-table", labGetStorage(window.sessionStorage));
+      // dataLayer
+      var dl = labGetDataLayer();
+      document.getElementById("dl-count").textContent = "(" + dl.length + " entries)";
+      document.getElementById("dl-dump").textContent = JSON.stringify(dl, null, 2);
+      // Timeline
+      var log = (window.__lab && window.__lab.consentLog) || [];
+      document.getElementById("timeline").innerHTML = log.map(function (e) {
+        var p = (typeof e.payload === "object") ? JSON.stringify(e.payload) : e.payload;
+        return "<div><span class='ts'>" + e.time.split("T")[1].replace("Z","") +
+               "</span> <b>" + e.source + "</b> " + escapeHtml(String(p)) + "</div>";
+      }).join("");
+    }
+
+    // ---- auto-refresh loop --------------------------------------------------
+    setInterval(function () {
+      if (document.getElementById("autorefresh").checked) renderAll();
+    }, 1000);
+    renderAll();
+  </script>
+</body>
+</html>
